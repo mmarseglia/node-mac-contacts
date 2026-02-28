@@ -1,0 +1,20 @@
+# Source control
+.git/
+.github/
+.gitignore
+.husky/
+
+# Build artifacts & dependencies
+build/
+node_modules/
+
+# Config & tooling
+.prettierrc
+.tool-versions
+.npmignore
+
+# Tests
+test/
+
+# Lockfile (consumers use their own)
+package-lock.json
