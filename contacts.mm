@@ -1,4 +1,3 @@
-#include "node.h"
 #import <AppKit/AppKit.h>
 #import <Contacts/Contacts.h>
 #include <napi.h>
@@ -102,7 +101,7 @@ Napi::Array GetInstantMessageAddresses(Napi::Env env, CNContact *cncontact) {
       (NSArray *)[[cncontact instantMessageAddresses] valueForKey:@"value"];
   for (int i = 0; i < num_im_addresses; i++) {
     Napi::Object address = Napi::Object::New(env);
-    CNSocialProfile *im_address = [addresses objectAtIndex:i];
+    CNInstantMessageAddress *im_address = [addresses objectAtIndex:i];
 
     address.Set("service", std::string([im_address service]
                                            ? [[im_address service] UTF8String]
@@ -129,16 +128,14 @@ std::string GetBirthday(CNContact *cncontact) {
 
 Napi::Buffer<uint8_t> GetContactImage(Napi::Env env, CNContact *cncontact,
                                       bool thumbnail) {
-  std::vector<uint8_t> data;
-
   NSData *image_data =
       thumbnail ? [cncontact thumbnailImageData] : [cncontact imageData];
-  const uint8 *bytes = (uint8 *)[image_data bytes];
-  data.assign(bytes, bytes + [image_data length]);
 
-  if (data.empty())
+  if (image_data == nil || [image_data length] == 0)
     return Napi::Buffer<uint8_t>::New(env, 0);
-  return Napi::Buffer<uint8_t>::Copy(env, &data[0], data.size());
+
+  const uint8_t *bytes = (const uint8_t *)[image_data bytes];
+  return Napi::Buffer<uint8_t>::Copy(env, bytes, [image_data length]);
 }
 
 // Parses and returns an array of URL addresses as strings.
@@ -306,9 +303,22 @@ CNAuthorizationStatus AuthStatus() {
   return [CNContactStore authorizationStatusForEntityType:entityType];
 }
 
+// CNAuthorizationStatusLimited is available on iOS 18+ but may not be
+// declared as available on macOS in all SDK versions. The raw value is 4.
+static const CNAuthorizationStatus CNAuthorizationStatusLimitedCompat =
+    (CNAuthorizationStatus)4;
+
+// Returns whether the current authorization status allows contact access.
+bool HasContactAccess() {
+  CNAuthorizationStatus status = AuthStatus();
+  return status == CNAuthorizationStatusAuthorized ||
+         status == CNAuthorizationStatusLimitedCompat;
+}
+
 // Returns the authorization status as a string.
 std::string AuthStatusString() {
-  switch (AuthStatus()) {
+  CNAuthorizationStatus status = AuthStatus();
+  switch (status) {
   case CNAuthorizationStatusAuthorized:
     return "Authorized";
   case CNAuthorizationStatusDenied:
@@ -316,6 +326,8 @@ std::string AuthStatusString() {
   case CNAuthorizationStatusRestricted:
     return "Restricted";
   default:
+    if (status == CNAuthorizationStatusLimitedCompat)
+      return "Limited";
     return "Not Determined";
   }
 }
@@ -371,7 +383,8 @@ NSArray *GetContactKeys(Napi::Array requested_keys) {
 
 // Returns all contacts in the CNContactStore matching a specified name string
 // predicate.
-NSArray *FindContacts(const std::string &name_string, Napi::Array extra_keys) {
+NSArray *FindContacts(const std::string &name_string, Napi::Array extra_keys,
+                      NSError **out_error) {
   CNContactStore *addressBook = [[CNContactStore alloc] init];
 
   NSString *name = [NSString stringWithUTF8String:name_string.c_str()];
@@ -380,12 +393,13 @@ NSArray *FindContacts(const std::string &name_string, Napi::Array extra_keys) {
   return
       [addressBook unifiedContactsMatchingPredicate:predicate
                                         keysToFetch:GetContactKeys(extra_keys)
-                                              error:nil];
+                                              error:out_error];
 }
 
 // Returns all contacts in the CNContactStore matching an identifier
 NSArray *FindContactsWithIdentifier(const std::string &identifier_string,
-                                    Napi::Array extra_keys) {
+                                    Napi::Array extra_keys,
+                                    NSError **out_error) {
   CNContactStore *addressBook = [[CNContactStore alloc] init];
 
   NSString *identifier =
@@ -399,7 +413,7 @@ NSArray *FindContactsWithIdentifier(const std::string &identifier_string,
   return
       [addressBook unifiedContactsMatchingPredicate:predicate
                                         keysToFetch:GetContactKeys(extra_keys)
-                                              error:nil];
+                                              error:out_error];
 }
 
 // Creates a new CNContact in order to update, delete, or add it to the
@@ -493,38 +507,38 @@ Napi::Promise RequestAccess(const Napi::CallbackInfo &info) {
   Napi::ThreadSafeFunction ts_fn = Napi::ThreadSafeFunction::New(
       env, Napi::Function::New(env, NoOp), "contactsCallback", 0, 1);
 
-  if (@available(macOS 10.11, *)) {
-    std::string status = AuthStatusString();
+  std::string status = AuthStatusString();
 
-    if (status == "Not Determined") {
-      __block Napi::ThreadSafeFunction tsfn = ts_fn;
-      CNContactStore *store = [CNContactStore new];
-      [store requestAccessForEntityType:CNEntityTypeContacts
-                      completionHandler:^(BOOL granted, NSError *error) {
-                        auto callback = [=](Napi::Env env, Napi::Function js_cb,
-                                            const char *granted) {
-                          deferred.Resolve(Napi::String::New(env, granted));
-                        };
-                        tsfn.BlockingCall(granted ? "Authorized" : "Denied",
-                                          callback);
-                        tsfn.Release();
-                      }];
-    } else if (status == "Denied") {
-      NSWorkspace *workspace = [[NSWorkspace alloc] init];
-      NSString *pref_string = @"x-apple.systempreferences:com.apple.preference."
-                              @"security?Contacts";
-
-      [workspace openURL:[NSURL URLWithString:pref_string]];
-
-      ts_fn.Release();
-      deferred.Resolve(Napi::String::New(env, "Denied"));
+  if (status == "Not Determined") {
+    __block Napi::ThreadSafeFunction tsfn = ts_fn;
+    CNContactStore *store = [CNContactStore new];
+    [store requestAccessForEntityType:CNEntityTypeContacts
+                    completionHandler:^(BOOL granted, NSError *error) {
+                      auto callback = [=](Napi::Env env, Napi::Function js_cb,
+                                          const char *granted) {
+                        deferred.Resolve(Napi::String::New(env, granted));
+                      };
+                      tsfn.BlockingCall(granted ? "Authorized" : "Denied",
+                                        callback);
+                      tsfn.Release();
+                    }];
+  } else if (status == "Denied") {
+    NSString *pref_string;
+    if (@available(macOS 13.0, *)) {
+      pref_string = @"x-apple.systempreferences:com.apple.settings."
+                    @"PrivacySecurity.extension?Contacts";
     } else {
-      ts_fn.Release();
-      deferred.Resolve(Napi::String::New(env, "Authorized"));
+      pref_string = @"x-apple.systempreferences:com.apple.preference."
+                    @"security?Contacts";
     }
+
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:pref_string]];
+
+    ts_fn.Release();
+    deferred.Resolve(Napi::String::New(env, "Denied"));
   } else {
     ts_fn.Release();
-    deferred.Resolve(Napi::String::New(env, "Authorized"));
+    deferred.Resolve(Napi::String::New(env, status.c_str()));
   }
 
   return deferred.Promise();
@@ -540,7 +554,7 @@ Napi::Value GetAuthStatus(const Napi::CallbackInfo &info) {
 Napi::Array GetAllContacts(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
 
-  if (AuthStatus() != CNAuthorizationStatusAuthorized)
+  if (!HasContactAccess())
     return Napi::Array::New(env);
 
   if (!contacts_ref.IsEmpty())
@@ -599,12 +613,20 @@ Napi::Array GetContactsByName(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
   Napi::Array contacts = Napi::Array::New(env);
 
-  if (AuthStatus() != CNAuthorizationStatusAuthorized)
+  if (!HasContactAccess())
     return contacts;
 
   const std::string name_string = info[0].As<Napi::String>().Utf8Value();
   Napi::Array extra_keys = info[1].As<Napi::Array>();
-  NSArray *cncontacts = FindContacts(name_string, extra_keys);
+
+  NSError *error = nil;
+  NSArray *cncontacts = FindContacts(name_string, extra_keys, &error);
+  if (error != nil) {
+    std::string err_msg = std::string([error.localizedDescription UTF8String]);
+    Napi::Error::New(env, "Failed to find contacts: " + err_msg)
+        .ThrowAsJavaScriptException();
+    return Napi::Array::New(env);
+  }
 
   int num_contacts = [cncontacts count];
   for (int i = 0; i < num_contacts; i++) {
@@ -620,7 +642,7 @@ Napi::Boolean AddNewContact(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
   CNContactStore *address_book = [[CNContactStore alloc] init];
 
-  if (AuthStatus() != CNAuthorizationStatusAuthorized)
+  if (!HasContactAccess())
     return Napi::Boolean::New(env, false);
 
   Napi::Object contact_data = info[0].As<Napi::Object>();
@@ -634,7 +656,15 @@ Napi::Boolean AddNewContact(const Napi::CallbackInfo &info) {
   // fetch the default container id explicitly to work around this.
   NSString *container_id = [address_book defaultContainerIdentifier];
   [request addContact:contact toContainerWithIdentifier:container_id];
-  bool success = [address_book executeSaveRequest:request error:nil];
+
+  NSError *error = nil;
+  bool success = [address_book executeSaveRequest:request error:&error];
+  if (!success && error != nil) {
+    std::string err_msg = std::string([error.localizedDescription UTF8String]);
+    Napi::Error::New(env, "Failed to add contact: " + err_msg)
+        .ThrowAsJavaScriptException();
+    return Napi::Boolean::New(env, false);
+  }
 
   return Napi::Boolean::New(env, success);
 }
@@ -643,21 +673,37 @@ Napi::Boolean AddNewContact(const Napi::CallbackInfo &info) {
 Napi::Boolean DeleteContact(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
 
-  if (AuthStatus() != CNAuthorizationStatusAuthorized)
+  if (!HasContactAccess())
     return Napi::Boolean::New(env, false);
 
   Napi::Object contact_data = info[0].As<Napi::Object>();
 
+  NSError *find_error = nil;
   NSArray *cncontacts;
   if (contact_data.Has("identifier")) {
     const std::string identifier =
         contact_data.Get("identifier").As<Napi::String>().Utf8Value();
-    cncontacts = FindContactsWithIdentifier(identifier, Napi::Array::New(env));
+    cncontacts = FindContactsWithIdentifier(identifier, Napi::Array::New(env),
+                                            &find_error);
   } else if (contact_data.Has("name")) {
     const std::string name_string =
         contact_data.Get("name").As<Napi::String>().Utf8Value();
-    cncontacts = FindContacts(name_string, Napi::Array::New(env));
+    cncontacts = FindContacts(name_string, Napi::Array::New(env), &find_error);
   } else {
+    return Napi::Boolean::New(env, false);
+  }
+
+  if (find_error != nil) {
+    std::string err_msg =
+        std::string([find_error.localizedDescription UTF8String]);
+    Napi::Error::New(env, "Failed to find contact for deletion: " + err_msg)
+        .ThrowAsJavaScriptException();
+    return Napi::Boolean::New(env, false);
+  }
+
+  if ([cncontacts count] == 0) {
+    Napi::Error::New(env, "No contact found matching the provided criteria")
+        .ThrowAsJavaScriptException();
     return Napi::Boolean::New(env, false);
   }
 
@@ -666,7 +712,15 @@ Napi::Boolean DeleteContact(const Napi::CallbackInfo &info) {
   [request deleteContact:[contact mutableCopy]];
 
   CNContactStore *addressBook = [[CNContactStore alloc] init];
-  bool success = [addressBook executeSaveRequest:request error:nil];
+  NSError *save_error = nil;
+  bool success = [addressBook executeSaveRequest:request error:&save_error];
+  if (!success && save_error != nil) {
+    std::string err_msg =
+        std::string([save_error.localizedDescription UTF8String]);
+    Napi::Error::New(env, "Failed to delete contact: " + err_msg)
+        .ThrowAsJavaScriptException();
+    return Napi::Boolean::New(env, false);
+  }
 
   return Napi::Boolean::New(env, success);
 }
@@ -675,17 +729,137 @@ Napi::Boolean DeleteContact(const Napi::CallbackInfo &info) {
 Napi::Boolean UpdateContact(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
 
-  if (AuthStatus() != CNAuthorizationStatusAuthorized)
+  if (!HasContactAccess())
     return Napi::Boolean::New(env, false);
 
   Napi::Object contact_data = info[0].As<Napi::Object>();
 
-  CNMutableContact *contact = CreateCNMutableContact(contact_data);
+  // An identifier or name is required to find the existing contact.
+  NSError *find_error = nil;
+  NSArray *cncontacts;
+  if (contact_data.Has("identifier")) {
+    const std::string identifier =
+        contact_data.Get("identifier").As<Napi::String>().Utf8Value();
+    cncontacts = FindContactsWithIdentifier(identifier, Napi::Array::New(env),
+                                            &find_error);
+  } else if (contact_data.Has("firstName")) {
+    const std::string name_string =
+        contact_data.Get("firstName").As<Napi::String>().Utf8Value();
+    cncontacts = FindContacts(name_string, Napi::Array::New(env), &find_error);
+  } else {
+    Napi::Error::New(env,
+                     "updateContact requires an identifier or firstName to "
+                     "find the contact to update")
+        .ThrowAsJavaScriptException();
+    return Napi::Boolean::New(env, false);
+  }
+
+  if (find_error != nil) {
+    std::string err_msg =
+        std::string([find_error.localizedDescription UTF8String]);
+    Napi::Error::New(env, "Failed to find contact for update: " + err_msg)
+        .ThrowAsJavaScriptException();
+    return Napi::Boolean::New(env, false);
+  }
+
+  if ([cncontacts count] == 0) {
+    Napi::Error::New(env, "No contact found matching the provided criteria")
+        .ThrowAsJavaScriptException();
+    return Napi::Boolean::New(env, false);
+  }
+
+  // Fetch the existing contact and create a mutable copy for updating.
+  CNContact *existing = (CNContact *)[cncontacts objectAtIndex:0];
+  CNMutableContact *contact = [existing mutableCopy];
+
+  // Apply updates from the provided data.
+  if (contact_data.Has("firstName")) {
+    std::string first_name =
+        contact_data.Get("firstName").As<Napi::String>().Utf8Value();
+    [contact setGivenName:[NSString stringWithUTF8String:first_name.c_str()]];
+  }
+
+  if (contact_data.Has("middleName")) {
+    std::string middle_name =
+        contact_data.Get("middleName").As<Napi::String>().Utf8Value();
+    [contact setMiddleName:[NSString stringWithUTF8String:middle_name.c_str()]];
+  }
+
+  if (contact_data.Has("lastName")) {
+    std::string last_name =
+        contact_data.Get("lastName").As<Napi::String>().Utf8Value();
+    [contact setFamilyName:[NSString stringWithUTF8String:last_name.c_str()]];
+  }
+
+  if (contact_data.Has("nickname")) {
+    std::string nick_name =
+        contact_data.Get("nickname").As<Napi::String>().Utf8Value();
+    [contact setNickname:[NSString stringWithUTF8String:nick_name.c_str()]];
+  }
+
+  if (contact_data.Has("jobTitle")) {
+    std::string job_title =
+        contact_data.Get("jobTitle").As<Napi::String>().Utf8Value();
+    [contact setJobTitle:[NSString stringWithUTF8String:job_title.c_str()]];
+  }
+
+  if (contact_data.Has("departmentName")) {
+    std::string department_name =
+        contact_data.Get("departmentName").As<Napi::String>().Utf8Value();
+    [contact
+        setDepartmentName:[NSString
+                              stringWithUTF8String:department_name.c_str()]];
+  }
+
+  if (contact_data.Has("organizationName")) {
+    std::string organization_name =
+        contact_data.Get("organizationName").As<Napi::String>().Utf8Value();
+    [contact
+        setOrganizationName:[NSString stringWithUTF8String:organization_name
+                                                               .c_str()]];
+  }
+
+  if (contact_data.Has("birthday")) {
+    std::string birth_day =
+        contact_data.Get("birthday").As<Napi::String>().Utf8Value();
+    NSDateComponents *birthday_components = ParseBirthday(birth_day);
+    [contact setBirthday:birthday_components];
+  }
+
+  if (contact_data.Has("phoneNumbers")) {
+    Napi::Array phone_number_data =
+        contact_data.Get("phoneNumbers").As<Napi::Array>();
+    NSArray *phone_numbers = ParsePhoneNumbers(phone_number_data);
+    [contact setPhoneNumbers:[NSArray arrayWithArray:phone_numbers]];
+  }
+
+  if (contact_data.Has("emailAddresses")) {
+    Napi::Array email_address_data =
+        contact_data.Get("emailAddresses").As<Napi::Array>();
+    NSArray *email_addresses = ParseEmailAddresses(email_address_data);
+    [contact setEmailAddresses:[NSArray arrayWithArray:email_addresses]];
+  }
+
+  if (contact_data.Has("urlAddresses")) {
+    Napi::Array url_address_data =
+        contact_data.Get("urlAddresses").As<Napi::Array>();
+    NSArray *url_addresses = ParseUrlAddresses(url_address_data);
+    [contact setUrlAddresses:[NSArray arrayWithArray:url_addresses]];
+  }
+
   CNSaveRequest *request = [[CNSaveRequest alloc] init];
   [request updateContact:contact];
 
   CNContactStore *addressBook = [[CNContactStore alloc] init];
-  bool success = [addressBook executeSaveRequest:request error:nil];
+  NSError *save_error = nil;
+  bool success = [addressBook executeSaveRequest:request error:&save_error];
+  if (!success && save_error != nil) {
+    std::string err_msg =
+        std::string([save_error.localizedDescription UTF8String]);
+    Napi::Error::New(env, "Failed to update contact: " + err_msg)
+        .ThrowAsJavaScriptException();
+    return Napi::Boolean::New(env, false);
+  }
 
   return Napi::Boolean::New(env, success);
 }
@@ -713,9 +887,10 @@ Napi::Boolean SetupListener(const Napi::CallbackInfo &info) {
                   return;
 
                 contacts_ref.Reset();
+                NSNumber *externalValue =
+                    [info objectForKey:@"CNNotificationOriginationExternally"];
                 bool external =
-                    [[info objectForKey:@"CNNotificationOriginationExternally"]
-                        boolValue];
+                    externalValue != nil ? [externalValue boolValue] : true;
 
                 auto callback = [external](Napi::Env env, Napi::Function js_cb,
                                            const char *value) {
@@ -784,9 +959,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set(Napi::String::New(env, "updateContact"),
               Napi::Function::New(env, UpdateContact));
 
-  auto *isolate = v8::Isolate::GetCurrent();
-  node::AddEnvironmentCleanupHook(
-      isolate, [](void *) { contacts_ref.Reset(); }, isolate);
+  env.AddCleanupHook([]() { contacts_ref.Reset(); });
 
   return exports;
 }

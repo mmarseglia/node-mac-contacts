@@ -40,7 +40,7 @@ function getAllContacts(extraProperties = []) {
     )
   }
 
-  return contacts.getAllContacts.call(this, extraProperties)
+  return contacts.getAllContacts(extraProperties)
 }
 
 function getContactsByName(name, extraProperties = []) {
@@ -60,7 +60,7 @@ function getContactsByName(name, extraProperties = []) {
     )
   }
 
-  return contacts.getContactsByName.call(this, name, extraProperties)
+  return contacts.getContactsByName(name, extraProperties)
 }
 
 function validateContactArg(contact) {
@@ -103,12 +103,53 @@ function validateContactArg(contact) {
 
 function addNewContact(contact) {
   validateContactArg(contact)
-  return contacts.addNewContact.call(this, contact)
+  return contacts.addNewContact(contact)
 }
 
 function updateContact(contact) {
-  validateContactArg(contact)
-  return contacts.updateContact.call(this, contact)
+  if (!contact || Object.keys(contact).length === 0) {
+    throw new TypeError('contact must be a non-empty object')
+  }
+
+  for (const prop of [
+    'identifier',
+    'firstName',
+    'middleName',
+    'lastName',
+    'nickname',
+    'jobTitle',
+    'departmentName',
+    'organizationName',
+  ]) {
+    const hasProp = contact.hasOwnProperty(prop)
+    if (hasProp && typeof contact[prop] !== 'string') {
+      throw new TypeError(`${prop} must be a string`)
+    }
+  }
+  for (const prop of ['phoneNumbers', 'emailAddresses', 'urlAddresses']) {
+    const hasProp = contact.hasOwnProperty(prop)
+    if (hasProp && !Array.isArray(contact[prop])) {
+      throw new TypeError(`${prop} must be an array`)
+    }
+  }
+
+  const hasBirthday = contact.hasOwnProperty('birthday')
+  if (hasBirthday) {
+    const datePattern = /^\d{4}\-(0[1-9]|1[012])\-(0[1-9]|[12][0-9]|3[01])$/
+    if (typeof contact.birthday !== 'string') {
+      throw new TypeError('birthday must be a string')
+    } else if (!contact.birthday.match(datePattern)) {
+      throw new Error('birthday must use YYYY-MM-DD format')
+    }
+  }
+
+  if (!contact.identifier && !contact.firstName) {
+    throw new TypeError(
+      'updateContact requires an identifier or firstName to find the contact',
+    )
+  }
+
+  return contacts.updateContact(contact)
 }
 
 function deleteContact(contact) {
@@ -127,7 +168,7 @@ function deleteContact(contact) {
     throw new TypeError('name must be a string')
   }
 
-  return contacts.deleteContact.call(this, contact)
+  return contacts.deleteContact(contact)
 }
 
 module.exports = {

@@ -198,6 +198,18 @@ describe('node-mac-contacts', () => {
       }).to.throw(/nickname must be a string/)
     })
 
+    it('should throw if identifier is not a string', () => {
+      expect(() => {
+        updateContact({ identifier: 1 })
+      }).to.throw(/identifier must be a string/)
+    })
+
+    it('should throw if neither identifier nor firstName is provided', () => {
+      expect(() => {
+        updateContact({ lastName: 'Smith' })
+      }).to.throw(/updateContact requires an identifier or firstName/)
+    })
+
     it('should throw if birthday is not a string in YYYY-MM-DD format', () => {
       expect(() => {
         updateContact({ birthday: 1 })

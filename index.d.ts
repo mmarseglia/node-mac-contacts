@@ -2,27 +2,29 @@
 // Project: node-mac-contacts
 
 export function getAuthStatus(): AuthStatus
-export function requestAccess(): Promise<'Denied' | 'Authorized'>
-export function getAllContacts(extraProperties?: ContactExtraProperties): Promise<Contact[]>
-export function getContactByName(name: string, extraProperties?: ContactExtraProperties): Promise<Contact>
-export function addNewContact(contact?: AddOrUpdateContactOptions): boolean
-export function updateContact(contact?: AddOrUpdateContactOptions): boolean
-export function deleteContact(contact?: DeleteContactOptions): boolean
+export function requestAccess(): Promise<AuthStatus>
+export function getAllContacts(extraProperties?: ContactExtraProperties): Contact[]
+export function getContactsByName(name: string, extraProperties?: ContactExtraProperties): Contact[]
+export function addNewContact(contact: AddOrUpdateContactOptions): boolean
+export function updateContact(contact: UpdateContactOptions): boolean
+export function deleteContact(contact: DeleteContactOptions): boolean
 
-export interface listener extends NodeJS.EventEmitter {
+export declare const listener: ContactListener
+
+interface ContactListener extends NodeJS.EventEmitter {
   setup(): void
   remove(): void
   isListening(): boolean
-  on(event: 'contact-changed', listener: (external: Boolean) => void): this
-  once(event: 'contact-changed', listener: (external: Boolean) => void): this
+  on(event: 'contact-changed', listener: (external: boolean) => void): this
+  once(event: 'contact-changed', listener: (external: boolean) => void): this
 }
 
-export type ContactExtraProperties = Array<'jobTitle' | 'departmentName' | 'organizationName' | 'middleName' | 'note' | 'contactImage' | 'contactThumbnailImage' | 'instantMessageAddresses' | 'socialProfiles'>
+export type ContactExtraProperties = Array<'jobTitle' | 'departmentName' | 'organizationName' | 'middleName' | 'note' | 'contactImage' | 'contactThumbnailImage' | 'instantMessageAddresses' | 'socialProfiles' | 'urlAddresses'>
 
-export type AuthStatus = 'Not Determined' | 'Denied' | 'Authorized' | 'Restricted'
+export type AuthStatus = 'Not Determined' | 'Denied' | 'Authorized' | 'Restricted' | 'Limited'
 
 export interface DeleteContactOptions {
-  identifier?: string,
+  identifier?: string
   name?: string
 }
 
@@ -37,6 +39,22 @@ export interface AddOrUpdateContactOptions {
   birthday?: string
   phoneNumbers?: string[]
   emailAddresses?: string[]
+  urlAddresses?: string[]
+}
+
+export interface UpdateContactOptions {
+  identifier?: string
+  firstName?: string
+  middleName?: string
+  lastName?: string
+  nickname?: string
+  jobTitle?: string
+  departmentName?: string
+  organizationName?: string
+  birthday?: string
+  phoneNumbers?: string[]
+  emailAddresses?: string[]
+  urlAddresses?: string[]
 }
 
 export interface Contact {
@@ -55,6 +73,7 @@ export interface Contact {
   note?: string
   contactImage?: Buffer
   contactThumbnailImage?: Buffer
-  socialProfiles?: { service: string, username: string }[]
-  instantMessageAddresses?: { service: string, username: string }[]
+  socialProfiles?: { service: string; username: string; url: string }[]
+  instantMessageAddresses?: { service: string; username: string }[]
+  urlAddresses?: string[]
 }

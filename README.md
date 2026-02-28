@@ -6,7 +6,7 @@
 ## Description
 
 ```js
-$ npm i node-mac-contacts
+npm i node-mac-contacts
 ```
 
 This Native Node Module allows you to create, read, update, and delete contact from users' contacts databases on macOS.
@@ -42,7 +42,8 @@ Returns `String` - Can be one of 'Not Determined', 'Denied', 'Authorized', or 'R
 
 Checks the authorization status of the application to access the central Contacts store on macOS.
 
-Return Value Descriptions: 
+Return Value Descriptions:
+
 * 'Not Determined' - The user has not yet made a choice regarding whether the application may access contact data.
 * 'Not Authorized' - The application is not authorized to access contact data. The user cannot change this application’s status, possibly due to active restrictions such as parental controls being in place.
 * 'Denied' - The user explicitly denied access to contact data for the application.
@@ -104,7 +105,7 @@ console.log(allContacts[0])
     lastName: 'Appleseed',
     nickname: 'Johnny',
     birthday: '1970-01-01',
-    phoneNumbers: [ +11234566789' ],
+    phoneNumbers: [ '+11234566789' ],
     emailAddresses: [ 'johnny@appleseed.com' ],
     postalAddresses: [ '123 Pine Tree Way\nBlack Oak, Arkansas 72414\nUnited States' ]
   }
@@ -147,9 +148,9 @@ This method will return an empty array (`[]`) if access to Contacts has not been
 Example Usage:
 
 ```js
-const contacts = contacts.getContactsByName('Appleseed')
+const appleseedContacts = contacts.getContactsByName('Appleseed')
 
-console.log(contacts)
+console.log(appleseedContacts)
 /* Prints:
 [
   { 
@@ -157,7 +158,7 @@ console.log(contacts)
     lastName: 'Appleseed',
     nickname: 'Johnny',
     birthday: '1970-01-01',
-    phoneNumbers: [ +11234566789' ],
+    phoneNumbers: [ '+11234566789' ],
     emailAddresses: [ 'johnny@appleseed.com' ],
     postalAddresses: [ '123 Pine Tree Way\nBlack Oak, Arkansas 72414\nUnited States' ]
   }
@@ -219,7 +220,7 @@ Example Usage:
 
 ```js
 const name = 'Jonathan Appleseed'
-const deleted = contacts.deleteContact(name)
+const deleted = contacts.deleteContact({ name })
 
 console.log(`Contact ${name} was ${deleted ? 'deleted' : 'not deleted'}.`)
 ```
@@ -227,7 +228,8 @@ console.log(`Contact ${name} was ${deleted ? 'deleted' : 'not deleted'}.`)
 ### `contacts.updateContact(contact)`
 
 * `contact` Object
-  * `firstName` String (required) - The first name of the contact.
+  * `identifier` String (optional) - The unique identifier of the contact to update. If provided, used to locate the contact.
+  * `firstName` String (optional) - The first name of the contact. If no `identifier` is provided, used to locate the contact.
   * `lastName` String (optional) - The last name of the contact.
   * `nickname` String (optional) - The nickname for the contact.
   * `jobTitle` String (optional) - The contact's job title.
@@ -241,9 +243,7 @@ console.log(`Contact ${name} was ${deleted ? 'deleted' : 'not deleted'}.`)
 
 Returns `Boolean` - whether the contact was updated successfully.
 
-Updates a contact to the user's contacts database.
-
-You should take care to specify parameters to the `contact` object to such a degree that you can be confident the first contact to be returned from a predicate search is the contact you intend to update.
+Updates an existing contact in the user's contacts database. The contact to update is located by `identifier` (preferred) or by `firstName` search. The first matching contact is updated with the provided fields.
 
 This method will return `false` if access to Contacts has not been granted.
 
