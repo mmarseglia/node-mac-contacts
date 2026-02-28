@@ -1,5 +1,5 @@
 {
-  "name": "node-mac-contacts",
+  "name": "@mmarseglia/node-mac-contacts",
   "version": "2.0.0",
   "description": "A native module that allows you to access and manipulate macOS contacts",
   "main": "index.js",
@@ -12,11 +12,14 @@
     "rebuild": "node-gyp rebuild",
     "rebuild:dev": "node-gyp rebuild --debug",
     "test": "./node_modules/.bin/mocha --reporter spec",
-    "prepare": "husky install"
+    "prepare": "husky"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/codebytere/node-mac-contacts.git"
+    "url": "git+https://github.com/mmarseglia/node-mac-contacts.git"
   },
   "keywords": [
     "contacts",
@@ -28,9 +31,9 @@
   "author": "Shelley Vohr <shelley.vohr@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/codebytere/node-mac-contacts/issues"
+    "url": "https://github.com/mmarseglia/node-mac-contacts/issues"
   },
-  "homepage": "https://github.com/codebytere/node-mac-contacts#readme",
+  "homepage": "https://github.com/mmarseglia/node-mac-contacts#readme",
   "devDependencies": {
     "chai": "^6.2.2",
     "clang-format": "1.8.0",

@@ -29,10 +29,10 @@ jobs:
         with:
           node-version: current
           registry-url: 'https://npm.pkg.github.com'
-          scope: '@codebytere'
+          scope: '@mmarseglia'
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --ignore-scripts
 
       - name: Build native addon
         run: npm run rebuild

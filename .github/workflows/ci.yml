@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: current
       - name: Install dependencies
-        run: npm install
+        run: npm install --ignore-scripts
       - name: Lint
         run: npm run lint
 
@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: current
       - name: Install dependencies
-        run: npm install
+        run: npm install --ignore-scripts
       - name: Build native addon
         run: npm run rebuild
       - name: Test
