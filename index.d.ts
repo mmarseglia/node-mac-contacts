@@ -28,6 +28,18 @@ export interface DeleteContactOptions {
   name?: string
 }
 
+export interface PostalAddress {
+  street?: string
+  city?: string
+  state?: string
+  postalCode?: string
+  country?: string
+  /** ISO 3166-1 alpha-2 code, e.g. "US" or "GB". */
+  ISOCountryCode?: string
+  /** Address label, e.g. "home" or "work". Defaults to "home" if omitted. */
+  label?: string
+}
+
 export interface AddOrUpdateContactOptions {
   firstName: string
   middleName?: string
@@ -40,6 +52,7 @@ export interface AddOrUpdateContactOptions {
   phoneNumbers?: string[]
   emailAddresses?: string[]
   urlAddresses?: string[]
+  postalAddresses?: PostalAddress[]
 }
 
 export interface UpdateContactOptions {
@@ -55,6 +68,7 @@ export interface UpdateContactOptions {
   phoneNumbers?: string[]
   emailAddresses?: string[]
   urlAddresses?: string[]
+  postalAddresses?: PostalAddress[]
 }
 
 export interface Contact {

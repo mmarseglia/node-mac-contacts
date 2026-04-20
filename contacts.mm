@@ -296,6 +296,56 @@ NSArray *ParseUrlAddresses(Napi::Array url_address_data) {
   return url_addresses;
 }
 
+// Parses an array of postal address objects and converts them to an NSArray of
+// CNLabeledValue<CNMutablePostalAddress> objects.
+NSArray *ParsePostalAddresses(Napi::Array postal_address_data) {
+  NSMutableArray *postal_addresses = [[NSMutableArray alloc] init];
+
+  int data_length = static_cast<int>(postal_address_data.Length());
+  for (int i = 0; i < data_length; i++) {
+    Napi::Object addr_obj = postal_address_data.Get(i).As<Napi::Object>();
+    CNMutablePostalAddress *addr = [[CNMutablePostalAddress alloc] init];
+
+    if (addr_obj.Has("street")) {
+      std::string v = addr_obj.Get("street").As<Napi::String>().Utf8Value();
+      [addr setStreet:[NSString stringWithUTF8String:v.c_str()]];
+    }
+    if (addr_obj.Has("city")) {
+      std::string v = addr_obj.Get("city").As<Napi::String>().Utf8Value();
+      [addr setCity:[NSString stringWithUTF8String:v.c_str()]];
+    }
+    if (addr_obj.Has("state")) {
+      std::string v = addr_obj.Get("state").As<Napi::String>().Utf8Value();
+      [addr setState:[NSString stringWithUTF8String:v.c_str()]];
+    }
+    if (addr_obj.Has("postalCode")) {
+      std::string v = addr_obj.Get("postalCode").As<Napi::String>().Utf8Value();
+      [addr setPostalCode:[NSString stringWithUTF8String:v.c_str()]];
+    }
+    if (addr_obj.Has("country")) {
+      std::string v = addr_obj.Get("country").As<Napi::String>().Utf8Value();
+      [addr setCountry:[NSString stringWithUTF8String:v.c_str()]];
+    }
+    if (addr_obj.Has("ISOCountryCode")) {
+      std::string v =
+          addr_obj.Get("ISOCountryCode").As<Napi::String>().Utf8Value();
+      [addr setISOCountryCode:[NSString stringWithUTF8String:v.c_str()]];
+    }
+
+    NSString *label = CNLabelHome;
+    if (addr_obj.Has("label")) {
+      std::string v = addr_obj.Get("label").As<Napi::String>().Utf8Value();
+      label = [NSString stringWithUTF8String:v.c_str()];
+    }
+
+    CNLabeledValue *labeled_value = [CNLabeledValue labeledValueWithLabel:label
+                                                                    value:addr];
+    [postal_addresses addObject:labeled_value];
+  }
+
+  return postal_addresses;
+}
+
 // Returns a status indicating whether or not the user has authorized Contacts
 // access.
 CNAuthorizationStatus AuthStatus() {
@@ -493,6 +543,13 @@ CNMutableContact *CreateCNMutableContact(Napi::Object contact_data) {
         contact_data.Get("urlAddresses").As<Napi::Array>();
     NSArray *url_addresses = ParseUrlAddresses(url_address_data);
     [contact setUrlAddresses:[NSArray arrayWithArray:url_addresses]];
+  }
+
+  if (contact_data.Has("postalAddresses")) {
+    Napi::Array postal_address_data =
+        contact_data.Get("postalAddresses").As<Napi::Array>();
+    NSArray *postal_addresses = ParsePostalAddresses(postal_address_data);
+    [contact setPostalAddresses:[NSArray arrayWithArray:postal_addresses]];
   }
 
   return contact;
@@ -845,6 +902,13 @@ Napi::Boolean UpdateContact(const Napi::CallbackInfo &info) {
         contact_data.Get("urlAddresses").As<Napi::Array>();
     NSArray *url_addresses = ParseUrlAddresses(url_address_data);
     [contact setUrlAddresses:[NSArray arrayWithArray:url_addresses]];
+  }
+
+  if (contact_data.Has("postalAddresses")) {
+    Napi::Array postal_address_data =
+        contact_data.Get("postalAddresses").As<Napi::Array>();
+    NSArray *postal_addresses = ParsePostalAddresses(postal_address_data);
+    [contact setPostalAddresses:[NSArray arrayWithArray:postal_addresses]];
   }
 
   CNSaveRequest *request = [[CNSaveRequest alloc] init];
